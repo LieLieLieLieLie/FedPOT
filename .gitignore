@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.bkp
+
+# Local experiment artifacts
+code/data/
+code/logs/
+code/checkpoints/
+code/checkpoints_probe/
+code/results/
+
+# Backup and scratch folders
+code备份合集/
+.claude/
+
+# Model / array artifacts
+*.pt
+*.pth
+*.ckpt
+*.npz
+*.npy
+
+# Logs
+*.log
+
+# LaTeX auxiliary files
+paper/*.aux
+paper/*.abs
+paper/*.bbl
+paper/*.blg
+paper/*.log
+paper/*.out
+paper/*.toc
+paper/*.lof
+paper/*.lot
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.synctex.gz
+
+# Keep paper source, PDFs, BibTeX, figures, and Draw.io files tracked.

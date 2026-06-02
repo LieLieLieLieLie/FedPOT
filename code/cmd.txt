@@ -1,0 +1,18 @@
+# ★ 最核心命令：从训练到全部6类实验，一次跑完
+python main.py --full
+
+# ─── 单独运行各类实验 ─────────────────────────────
+python main.py                    # 默认：两个数据集 train_test
+python main.py --mode train       # 只训练保存
+python main.py --mode test        # 只测试（需先 train）
+python main.py --sweep            # 全域名 sweep（论文主表格）
+python main.py --baselines        # 实验一：SOTA 对比
+python main.py --ablation         # 实验二：消融实验
+python main.py --privacy          # 实验三：隐私预算分析
+python main.py --hyperparam       # 实验四：超参数敏感性
+python main.py --viz              # 实验五：t-SNE + OT 热力图
+python main.py --comm             # 实验六：通信效率分析
+
+# ─── 组合命令 ─────────────────────────────────────
+python main.py --sweep --baselines        # 主表格 + SOTA 对比
+python main.py --dataset cwru --full      # 只跑 CWRU 的全部实验
