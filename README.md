@@ -145,7 +145,7 @@ Zilong Yin
 College of Electronic and Information Engineering, Tongji University  
 Shanghai 201804, China  
 ORCID: 0009-0002-7994-2772  
-Email: zilong_yin@163.con
+Email: zilong_yin@163.com
 
 ## License
 
