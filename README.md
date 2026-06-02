@@ -5,17 +5,16 @@ Core implementation of FedPOT: privacy-preserving federated transfer learning vi
 ## Repository Layout
 
 ```text
-code/
-  core/              # DP prototype release, OT alignment, generation, filtering
-  data/              # Dataset placement guide only; raw data are not included
-  evaluation/        # Downstream evaluation utilities
-  experiments/       # Baselines, ablation, diagnostics, visualization scripts
-  feddata/           # CWRU and Office-Caltech-10 data loaders
-  models/            # Neural network modules
-  config.py          # Hyperparameters and experiment configuration
-  main.py            # Main experiment entry
-  prepare_data.py    # Dataset preparation helper
-  trainer.py         # FedPOT training and evaluation pipeline
+core/              # DP prototype release, OT alignment, generation, filtering
+data/              # Dataset placement guide only; raw data are not included
+evaluation/        # Downstream evaluation utilities
+experiments/       # Baselines, ablation, diagnostics, visualization scripts
+feddata/           # CWRU and Office-Caltech-10 data loaders
+models/            # Neural network modules
+config.py          # Hyperparameters and experiment configuration
+main.py            # Main experiment entry
+prepare_data.py    # Dataset preparation helper
+trainer.py         # FedPOT training and evaluation pipeline
 ```
 
 ## Installation
@@ -28,11 +27,11 @@ pip install torch torchvision numpy scipy scikit-learn POT pandas matplotlib tqd
 
 ## Data
 
-Put datasets under `code/data/`. See `code/data/README.md` for the expected layout.
+Put datasets under `data/`. See `data/README.md` for the expected layout.
 
 ## Usage
 
-Run from the `code/` directory:
+Run from the repository root:
 
 ```bash
 python main.py --dataset cwru --baselines
