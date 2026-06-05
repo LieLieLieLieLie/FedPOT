@@ -30,10 +30,10 @@ ABLATION_VARIANTS = {
     "Full FedPOT":    {},
     # No-DP is an upper-bound privacy analysis point, not a component-removal
     # ablation. Here we stress the DP mechanism with a tight privacy budget.
-    "Tight DP":       {"epsilon": 0.1},
-    # "w/o Partial OT": use uniform d-prototype average (no OT alignment at all).
-    # Uniform condition is the correct "no alignment" ablation.
-    "w/o Partial OT": {"_uniform_cond": True},
+    "Tight DP":       {"epsilon": 0.02},
+    # "w/o Partial OT": remove both the transport condition and the OT-derived
+    # cluster->class mapping so pseudo labels no longer benefit from OT.
+    "w/o Partial OT": {"_uniform_cond": True, "_disable_ot_mapping": True},
     "w/o OT Reg":     {"_no_ot_reg": True},
     # "w/o Soft Cond.": hard bijection (T_star) instead of soft OT plan (T_soft).
     "w/o Soft Cond.": {"_hard_condition": True},
@@ -60,20 +60,6 @@ METRIC_PALETTE = [FEDPOT_COLOR, OTHER_COLORS[3], OTHER_COLORS[1]]
 BEST_ALPHA = 1.0
 OTHER_ALPHA = 0.68
 
-ABLATION_GAPS = {
-    "office_caltech": {
-        "Tight DP":       {"accuracy": 0.0200, "macro_f1": 0.0180, "macro_auc": 0.0180},
-        "w/o Partial OT": {"accuracy": 0.0240, "macro_f1": 0.0220, "macro_auc": 0.0200},
-        "w/o OT Reg":     {"accuracy": 0.0160, "macro_f1": 0.0150, "macro_auc": 0.0140},
-        "w/o Soft Cond.": {"accuracy": 0.0120, "macro_f1": 0.0120, "macro_auc": 0.0120},
-    },
-    "cwru": {
-        "Tight DP":       {"accuracy": 0.0106, "macro_f1": 0.0178, "macro_auc": 0.0228},
-        "w/o Partial OT": {"accuracy": 0.0266, "macro_f1": 0.0265, "macro_auc": 0.0271},
-        "w/o OT Reg":     {"accuracy": 0.0319, "macro_f1": 0.0390, "macro_auc": 0.0316},
-        "w/o Soft Cond.": {"accuracy": 0.0213, "macro_f1": 0.0286, "macro_auc": 0.0299},
-    },
-}
 
 
 def _single_best_index(vals, prefer_idx=0, atol=1e-3):
@@ -85,28 +71,6 @@ def _single_best_index(vals, prefer_idx=0, atol=1e-3):
     if len(tied) == 0:
         return -1
     return prefer_idx if prefer_idx in tied else int(tied[0])
-
-
-def _stabilize_ablation_result(dataset: str, name: str, all_results: Dict,
-                               result: Dict) -> Dict:
-    if name == "Full FedPOT":
-        return result
-    full = all_results.get("Full FedPOT", {}).get("FedPOT", {})
-    fed = result.get("FedPOT", {})
-    gaps = ABLATION_GAPS.get(dataset, {}).get(name, {})
-    if not full or not fed or not gaps:
-        return result
-    fed = dict(fed)
-    for metric, gap in gaps.items():
-        if metric not in full:
-            continue
-        target = max(0.0, float(full[metric]) - float(gap))
-        current = float(fed.get(metric, target))
-        if current >= float(full[metric]) or abs(current - target) > 0.06:
-            fed[metric] = target
-    result = dict(result)
-    result["FedPOT"] = fed
-    return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -126,6 +90,7 @@ def run_ablation(args, dataset: str, build_config_fn, logger=None) -> Dict:
         no_ot_reg      = ov.pop("_no_ot_reg",      False)
         hard_condition = ov.pop("_hard_condition", False)
         uniform_cond   = ov.pop("_uniform_cond",   False)
+        disable_mapping = ov.pop("_disable_ot_mapping", False)
         no_clean_align = ov.pop("_no_clean_alignment", False)
 
         saved = {}
@@ -136,15 +101,10 @@ def run_ablation(args, dataset: str, build_config_fn, logger=None) -> Dict:
         args.exp_name = f"abl_{dataset}_{name.replace(' ','_').replace('/','')}"
         cfg = build_config_fn(args, dataset)
         if name != "Full FedPOT":
+            # Component-removal variants should evaluate the missing component,
+            # not re-tune the late-fusion ensemble to compensate for it.
+            cfg.downstream.auto_fusion_alpha = False
             cfg.downstream.use_auc_align_head = False
-            if dataset == "office_caltech":
-                cfg.downstream.fusion_alpha = 1.0
-                cfg.downstream.auto_fusion_alpha = False
-                cfg.downstream.use_align_fusion = False
-                cfg.downstream.hidden_dims = [16]
-                cfg.downstream.epochs = 5
-                cfg.downstream.dropout = 0.9
-                cfg.downstream.label_smoothing = 0.9
 
         if no_filter:
             cfg.filter.min_keep_ratio        = 1.0
@@ -164,7 +124,8 @@ def run_ablation(args, dataset: str, build_config_fn, logger=None) -> Dict:
         if no_clean_align:
             cfg.ot.clean_alignment = False
         if hard_condition:
-            # Hard OT condition only: no soft/NN condition mixing.
+            # Hard OT condition only: use the cluster-level OT bijection instead
+            # of the sample-level soft proto-condition mixture.
             cfg.ot.hard_condition = True
             cfg.ot.use_proto_condition = False
             cfg.ot.nn_condition_weight = 0.0
@@ -177,11 +138,12 @@ def run_ablation(args, dataset: str, build_config_fn, logger=None) -> Dict:
             cfg.ot.uniform_condition = True
             cfg.ot.nn_condition_weight = 0.0
             cfg.downstream.use_align_fusion = False
+        if disable_mapping:
+            cfg.ot.disable_ot_mapping = True
 
         try:
             result = FedPOTTrainer(cfg).train_test()
-            all_results[name] = _stabilize_ablation_result(
-                dataset, name, all_results, result)
+            all_results[name] = result
         except Exception as e:
             logger and logger.info(f"  [Ablation] {name} FAILED: {e}")
             all_results[name] = {}

@@ -9,15 +9,19 @@ import torch
 
 @dataclass
 class DataConfig:
-    dataset: str = "office_caltech"       # "office_caltech" | "cwru"
+    dataset: str = "office_home"          # "office_home" | "cwru"
 
-    # Office-Caltech10
-    data_dir: str = "./data/office_caltech_10"
-    source_domain: str = "amazon"
-    target_domain: str = "dslr"
+    # Office-Home
+    data_dir: str = "./data/office_home"
+    source_domain: str = "product"
+    target_domain: str = "real_world"
     n_classes: int = 10
     feature_dim: int = 2048
     split_dim: int = 1024
+    office_home_classes: Optional[List[str]] = field(default_factory=lambda: [
+        "Backpack", "Bike", "Calculator", "Keyboard", "Laptop",
+        "Monitor", "Mouse", "Mug", "Printer", "Webcam",
+    ])
 
     # CWRU
     cwru_data_dir: str = "./data/cwru"
@@ -41,7 +45,7 @@ class PrivacyConfig:
 
 @dataclass
 class PrototypeConfig:
-    n_clusters: int = 10
+    n_clusters: int = 65
     kmeans_n_init: int = 20
     kmeans_max_iter: int = 500
 
@@ -77,7 +81,7 @@ class OTConfig:
     disable_ot_mapping: bool = False
     # ProtoFTL-style conditioning: use t-prototype similarity (reliable,
     # same-domain) to weight d-prototypes reordered by the OT bijection.
-    # Enabled for OC (disjoint CNN feature halves) where cross-domain OT
+    # Enabled for Office-Home (disjoint CNN feature halves) where cross-domain OT
     # conditions are less reliable than t-side prototype similarities.
     # hard_condition=True then uses hard argmax instead of softmax.
     use_proto_condition: bool = False
@@ -151,6 +155,7 @@ class DownstreamConfig:
     office_align_alpha: float = 0.20
     use_align_fusion: bool = True
     auto_align_alpha: bool = True
+    use_combo_fusion: bool = False
     balance_prior_strength: float = 0.0
     balance_prior_temperature: float = 1.0
     use_auc_align_head: bool = False

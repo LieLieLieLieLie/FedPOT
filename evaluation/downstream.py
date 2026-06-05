@@ -62,9 +62,9 @@ class DownstreamTrainer:
         cfg_ds = self.cfg.downstream
         n_cls  = self.cfg.data.n_classes
         eps    = getattr(cfg_ds, "label_smoothing", 0.0)
-        torch.manual_seed(_stable_tag_seed(self.cfg.seed, self.tag))
+        torch.manual_seed(self.cfg.seed)
         if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(_stable_tag_seed(self.cfg.seed, self.tag))
+            torch.cuda.manual_seed_all(self.cfg.seed)
 
         self.model = DownstreamClassifier(
             X_train.shape[1], n_cls,

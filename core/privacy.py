@@ -32,7 +32,7 @@ def add_dp_noise(
         counts = np.asarray(counts, dtype=np.float32).reshape(-1, 1)
         sensitivity = 2.0 * max_norm / np.maximum(counts, 1.0)
     sigma = compute_sigma(sensitivity, epsilon, delta)
-    # Prototype vectors can be 1K+ dimensional (Office-Caltech). Applying the
+    # Prototype vectors can be 1K+ dimensional (Office-Home). Applying the
     # Gaussian scale independently to every coordinate makes the expected L2
     # noise grow as sqrt(d), which swamps the prototype geometry and makes OT
     # alignment effectively random.  We calibrate the vector-level perturbation

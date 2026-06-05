@@ -107,7 +107,19 @@ class PartialOTAligner:
             # T_n is computed from the relational cost matrix for ALL datasets
             # (see fit()).  Use T_n directly — subtracting R again would
             # double-penalise structural mismatch and degrade the bijection.
-            score = T_n
+            if self.cfg.data.dataset == "cwru":
+                align_dim = min(proto_t.shape[1], proto_d.shape[1])
+                cos_score = (
+                    normalize(proto_t[:, :align_dim], norm="l2")
+                    @ normalize(proto_d[:, :align_dim], norm="l2").T
+                )
+                mapping = cos_score.argmax(axis=1).astype(np.int64)
+                T_assign = np.zeros_like(T_n, dtype=np.float32)
+                T_assign[np.arange(C), mapping] = 1.0
+                self.T_star = T_assign / max(C, 1)
+                return mapping
+            else:
+                score = T_n
             row_ind, col_ind = linear_sum_assignment(-score)
             mapping = np.zeros(C, dtype=np.int64)
             mapping[row_ind] = col_ind

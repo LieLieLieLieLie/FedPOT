@@ -1,10 +1,6 @@
 """
-experiments/visualization.py — 实验五：可视化分析
-
-修复：
-  - t-SNE 三子图间距收紧（wspace 减小）
-  - OT 热力图删除 transport mass 标注（移至论文 caption）
-
+experiments/visualization.py �->实验五：可视化分�->
+修复�->  - t-SNE 三子图间距收紧（wspace 减小�->  - OT 热力图删�->transport mass 标注（移至论�->caption�->
 输出:
   - results/figures/tsne_{dataset}.pdf
   - results/figures/ot_heatmap_{dataset}.pdf
@@ -91,7 +87,7 @@ def _scatter_panel(ax, emb_2d, labels, class_names, title,
 def plot_tsne(t_features, d_features, gen_features,
               t_labels, d_labels, class_names,
               save_dir, dataset, logger=None):
-    """三面板 t-SNE，含 KDE 等高线，子图间距收紧。"""
+    """Plot t-SNE panels for target, source, and generated features."""
     try:
         from sklearn.manifold import TSNE
         from sklearn.preprocessing import StandardScaler
@@ -149,7 +145,7 @@ def plot_tsne(t_features, d_features, gen_features,
                       label=name)
         for i, name in enumerate(class_names)
     ]
-    legend_cols = 5 if dataset == "office_caltech" else len(class_names)
+    legend_cols = 5 if dataset == "office_home" else len(class_names)
     fig.legend(handles=legend_handles, loc="lower center",
                bbox_to_anchor=(0.5, -0.06), ncol=legend_cols,
                fontsize=viz_font,
@@ -158,15 +154,12 @@ def plot_tsne(t_features, d_features, gen_features,
 
     path = os.path.join(save_dir, f"tsne_{dataset}.pdf")
     save_pdf(fig, path)
-    logger and logger.info(f"  [Viz] t-SNE saved → {path}")
+    logger and logger.info(f"  [Viz] t-SNE saved -> {path}")
 
 
 def plot_ot_heatmap(T_star, cluster_names, class_names,
                     save_dir, dataset, transport_mass, logger=None):
-    """
-    OT 传输计划热力图（两面板）。
-    transport_mass 参数保留接口但不再显示在图上（移至论文 caption）。
-    """
+    """Plot the OT transport heatmap."""
     apply_style()
 
     C, K   = T_star.shape
@@ -179,7 +172,7 @@ def plot_ot_heatmap(T_star, cluster_names, class_names,
     fig, axes = plt.subplots(1, 2, figsize=(14, h),
                              gridspec_kw={"wspace": 0.38})
 
-    value_fmt = "{:.1f}" if dataset == "office_caltech" else "{:.2f}"
+    value_fmt = "{:.1f}" if dataset == "office_home" else "{:.2f}"
     panels = [
         (T_star, "(a) Raw Transport Plan $T^*$"),
         (T_norm, "(b) Alignment Probability (Row-Normalized $\\bar{T}^*$)"),
@@ -216,7 +209,7 @@ def plot_ot_heatmap(T_star, cluster_names, class_names,
         ax.set_title(title, fontsize=heat_font, pad=14)
         ax.tick_params(length=0)
 
-        # 红框标记每行最大值
+        # Mark the largest entry in each row.
         for i in range(C):
             best_j = np.argmax(data[i])
             ax.add_patch(
@@ -225,11 +218,11 @@ def plot_ot_heatmap(T_star, cluster_names, class_names,
                                linewidth=1.8, zorder=5)
             )
 
-    # ── transport mass 标注已移除（请写入论文 caption）──
+    # ── transport mass 标注已移除（请写入论�->caption）──
 
     path = os.path.join(save_dir, f"ot_heatmap_{dataset}.pdf")
     save_pdf(fig, path)
-    logger and logger.info(f"  [Viz] OT heatmap saved → {path}")
+    logger and logger.info(f"  [Viz] OT heatmap saved -> {path}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -240,11 +233,12 @@ def run_visualization(trainer, cfg, save_dir, dataset, logger=None):
     os.makedirs(save_dir, exist_ok=True)
 
     class_names = (
-        ["BackPack", "Bike", "Calc", "Headphone", "Keyboard",
-         "Laptop", "Monitor", "Mouse", "Mug", "Projector"]
-        if dataset == "office_caltech"
+        getattr(trainer.data, "classes", None)
+        or getattr(cfg.data, "office_home_classes", None)
+        if dataset == "office_home"
         else ["Normal", "InnerRace", "Ball", "OuterRace"]
     )
+    class_names = list(class_names)
     cluster_names = [f"Cluster-{c}" for c in range(cfg.prototype.n_clusters)]
 
     try:

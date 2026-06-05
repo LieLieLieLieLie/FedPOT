@@ -11,11 +11,12 @@ data/
     98.mat
     ...
     133.mat
-  office_caltech_10/
-    amazon/
-    caltech/
-    dslr/
-    webcam/
+  office_home/
+    OfficeHomeDataset_10072016/
+      Art/
+      Clipart/
+      Product/
+      Real World/
 ```
 
 The actual dataset files are not included in this repository.

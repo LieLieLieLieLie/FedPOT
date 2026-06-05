@@ -1,21 +1,28 @@
 """
-prepare_data.py — 数据下载验证 + 特征预提取（运行一次即可）
+Dataset preparation helper for FedPOT.
 
-  python prepare_data.py                    # 验证两个数据集
-  python prepare_data.py --dataset cwru     # 只下载 CWRU
-  python prepare_data.py --dataset office_caltech  # 只验证 Office-Caltech10
+Examples:
+  python prepare_data.py
+  python prepare_data.py --dataset office_home
+  python prepare_data.py --dataset cwru
 """
 
 import argparse
 import os
 import sys
 import urllib.request
+import zipfile
+
 import torch
 
-OC_DOMAINS = ["amazon", "caltech", "dslr", "webcam"]
-OC_CLASSES = [
-    "back_pack", "bike", "calculator", "headphones", "keyboard",
-    "laptop_computer", "monitor", "mouse", "mug", "projector",
+OFFICE_HOME_URL = (
+    "https://huggingface.co/huangyuyang11/officehome/resolve/main/"
+    "OfficeHomeDataset_10072016.zip"
+)
+OFFICE_HOME_DOMAINS = ["Art", "Clipart", "Product", "Real World"]
+OFFICE_HOME_CLASSES_10 = [
+    "Backpack", "Bike", "Calculator", "Keyboard", "Laptop",
+    "Monitor", "Mouse", "Mug", "Printer", "Webcam",
 ]
 
 CWRU_URLS = {
@@ -38,63 +45,66 @@ CWRU_URLS = {
 }
 
 
-# ── Office-Caltech10 ──────────────────────────────────────────────────────────
-
-def check_office_caltech(data_dir):
-    ok = True
-    for dom in OC_DOMAINS:
-        for cls in OC_CLASSES:
-            d = os.path.join(data_dir, dom, cls)
-            if not os.path.isdir(d):
-                print(f"  [MISSING] {d}")
-                ok = False
-    return ok
+def _office_home_root(data_dir):
+    nested = os.path.join(data_dir, "OfficeHomeDataset_10072016")
+    return nested if os.path.isdir(nested) else data_dir
 
 
-def prepare_office_caltech(data_dir, device):
-    print("\n── Office-Caltech10 ─────────────────────────────────────")
+def check_office_home(data_dir):
+    root = _office_home_root(data_dir)
+    return all(os.path.isdir(os.path.join(root, d)) for d in OFFICE_HOME_DOMAINS)
+
+
+def _download(url, dest):
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=60) as r, open(dest, "wb") as f:
+        while True:
+            chunk = r.read(1024 * 1024)
+            if not chunk:
+                break
+            f.write(chunk)
+
+
+def prepare_office_home(data_dir, device):
+    print("\n-- Office-Home ------------------------------------------------")
     print(f"   data_dir : {data_dir}")
+    os.makedirs(data_dir, exist_ok=True)
 
-    if not check_office_caltech(data_dir):
-        print("""
-  数据集结构不完整，请手动下载：
+    zip_path = os.path.join(data_dir, "OfficeHomeDataset_10072016.zip")
+    if not check_office_home(data_dir):
+        if not os.path.exists(zip_path):
+            print("   downloading Office-Home zip ...")
+            _download(OFFICE_HOME_URL, zip_path)
+        print("   extracting Office-Home zip ...")
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(data_dir)
 
-  方式 A — Kaggle CLI:
-    pip install kaggle
-    kaggle datasets download -d tarunbisht11/office-caltech-10-dataset
-    unzip office-caltech-10-dataset.zip -d ./data/
-
-  方式 B — 手动下载:
-    访问: https://github.com/jindongwang/transferlearning/blob/master/data/dataset.md
-    找 "Office+Caltech" 下载（约500MB），解压到:
-      ./data/office_caltech_10/
-        ├── amazon/  ├── caltech/  ├── dslr/  └── webcam/
-""")
+    if not check_office_home(data_dir):
+        print("Office-Home layout is still incomplete.")
+        print("Expected: data/office_home/OfficeHomeDataset_10072016/{Art,Clipart,Product,Real World}/")
         sys.exit(1)
 
-    print("   结构验证 OK ✓")
-    print("   正在预提取 ResNet50 特征（有GPU约2分钟，CPU约15分钟）...")
+    print("   layout OK")
+    print("   pre-extracting ResNet50 features for Product and Real World (10 classes) ...")
 
     sys.path.insert(0, os.path.dirname(__file__))
     from config import Config, DataConfig
-    from feddata.office_caltech import OfficeCaltechDataModule
+    from feddata.office_home import OfficeHomeDataModule
 
-    for src in OC_DOMAINS:
-        tgt = [d for d in OC_DOMAINS if d != src][0]
-        cfg = Config(data=DataConfig(
-            dataset="office_caltech", data_dir=data_dir,
-            source_domain=src, target_domain=tgt,
-        ), device=device)
-        print(f"   提取: {src} ...")
-        OfficeCaltechDataModule(cfg)
+    cfg = Config(data=DataConfig(
+        dataset="office_home",
+        data_dir=data_dir,
+        source_domain="product",
+        target_domain="real_world",
+        n_classes=len(OFFICE_HOME_CLASSES_10),
+        office_home_classes=OFFICE_HOME_CLASSES_10,
+    ), device=device)
+    OfficeHomeDataModule(cfg)
+    print("   Office-Home ready")
 
-    print("   Office-Caltech10 准备完成 ✓")
-
-
-# ── CWRU ─────────────────────────────────────────────────────────────────────
 
 def prepare_cwru(data_dir):
-    print("\n── CWRU Bearing Fault Dataset ───────────────────────────")
+    print("\n-- CWRU Bearing Fault Dataset --------------------------------")
     print(f"   data_dir : {data_dir}")
     os.makedirs(data_dir, exist_ok=True)
 
@@ -102,57 +112,40 @@ def prepare_cwru(data_dir):
     for stem, url in CWRU_URLS.items():
         dest = os.path.join(data_dir, f"{stem}.mat")
         if os.path.exists(dest):
-            print(f"   {stem}.mat 已存在，跳过")
+            print(f"   {stem}.mat exists, skip")
             continue
-        print(f"   下载 {stem}.mat ...", end=" ", flush=True)
+        print(f"   downloading {stem}.mat ...", end=" ", flush=True)
         try:
-            req = urllib.request.Request(
-                url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=30) as r, \
-                 open(dest, "wb") as f:
-                f.write(r.read())
-            print("✓")
+            _download(url, dest)
+            print("OK")
         except Exception as e:
-            print(f"失败 ({e})")
+            print(f"FAILED ({e})")
             failed.append(stem)
 
     if failed:
-        print(f"\n  下载失败: {failed}")
-        print("  请手动下载: https://engineering.case.edu/bearingdatacenter/download-data-file")
-        print(f"  将 .mat 文件放到: {data_dir}")
+        print(f"\n  failed files: {failed}")
+        print("  manually download from: https://engineering.case.edu/bearingdatacenter/download-data-file")
     else:
         found = [f for f in os.listdir(data_dir) if f.endswith(".mat")]
-        print(f"   CWRU 准备完成 ✓  共 {len(found)} 个 .mat 文件")
+        print(f"   CWRU ready: {len(found)} .mat files")
 
-
-# ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--dataset",  default="all",
-                   choices=["office_caltech", "cwru", "all"])
-    p.add_argument("--oc_dir",   default="./data/office_caltech_10")
+    p.add_argument("--dataset", default="all", choices=["office_home", "cwru", "all"])
+    p.add_argument("--office_home_dir", default="./data/office_home")
     p.add_argument("--cwru_dir", default="./data/cwru")
-    p.add_argument("--device",   default="cuda" if torch.cuda.is_available() else "cpu")
+    p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = p.parse_args()
 
-    print("=" * 55)
-    print("  FedPOT — 数据准备")
-    print("=" * 55)
-    print(f"  device : {args.device}")
-
-    if args.dataset in ("office_caltech", "all"):
-        prepare_office_caltech(args.oc_dir, args.device)
-
+    if args.dataset in ("office_home", "all"):
+        prepare_office_home(args.office_home_dir, args.device)
     if args.dataset in ("cwru", "all"):
         prepare_cwru(args.cwru_dir)
 
-    print("\n  全部完成！现在可以运行:")
-    print("    python main.py                    # 两个数据集，训练+测试")
-    print("    python main.py --mode train       # 只训练")
-    print("    python main.py --mode test        # 只测试")
-    print("    python main.py --sweep            # 全域名 sweep")
-    print("    python main.py --ablation         # 消融实验")
+    print("\nDone. Example:")
+    print("  python main.py --dataset office_home --baselines")
+    print("  python main.py --dataset office_home --ablation")
 
 
 if __name__ == "__main__":

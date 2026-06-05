@@ -21,13 +21,12 @@ def _norm(X):
     return X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-8)
 
 
-def _class_names(dataset):
-    return (
-        ["BackPack", "Bike", "Calc", "Headphone", "Keyboard",
-         "Laptop", "Monitor", "Mouse", "Mug", "Projector"]
-        if dataset == "office_caltech"
-        else ["Normal", "InnerRace", "Ball", "OuterRace"]
-    )
+def _class_names(dataset, trainer=None, cfg=None):
+    if dataset == "office_home":
+        names = (getattr(getattr(trainer, "data", None), "classes", None)
+                 or getattr(getattr(cfg, "data", None), "office_home_classes", None))
+        return list(names)
+    return ["Normal", "InnerRace", "Ball", "OuterRace"]
 
 
 def _generated_views(trainer):
@@ -62,7 +61,7 @@ def plot_office_retrieval(trainer, gen_train, gen_test, save_dir, logger=None):
     apply_style()
     y_test  = trainer.data.t_test_y
     y_train = trainer.data.t_train_y
-    labels  = _class_names("office_caltech")
+    labels  = _class_names("office_home", trainer=trainer)
 
     base_train = _norm(trainer.data.t_train_x)
     base_test  = _norm(trainer.data.t_test_x)
@@ -83,7 +82,7 @@ def plot_office_retrieval(trainer, gen_train, gen_test, save_dir, logger=None):
             b_match = (y_train[b_nn] == cls)
             f_match = (y_train[f_nn] == cls)
             if f_match and not b_match:
-                chosen = qi; break  # FedPOT wins â€” most informative
+                chosen = qi; break  # FedPOT wins â€?most informative
         if chosen is None:
             chosen = cls_idx[0]
         picks.append(chosen)
@@ -142,7 +141,7 @@ def plot_office_retrieval(trainer, gen_train, gen_test, save_dir, logger=None):
                 spine.set_linewidth(lw)
                 spine.set_edgecolor(ec)
 
-    path = os.path.join(save_dir, "semantic_retrieval_office_caltech.pdf")
+    path = os.path.join(save_dir, "semantic_retrieval_office_home.pdf")
     save_pdf(fig, path)
     logger and logger.info(f"  [Viz] Retrieval grid saved -> {path}")
 
@@ -151,7 +150,7 @@ def plot_cwru_feature_profiles(trainer, gen_train, save_dir, dataset, logger=Non
     if dataset != "cwru":
         return
     apply_style()
-    labels = _class_names(dataset)
+    labels = _class_names(dataset, trainer=trainer)
     fig, axes = plt.subplots(1, 4, figsize=(16.5, 3.9), gridspec_kw={"wspace": 0.25})
     axes = axes.ravel()
     pseudo = trainer.aligner.get_pseudo_labels(trainer.t_bank.assignments)
@@ -201,7 +200,7 @@ def plot_fusion_embedding(trainer, gen_train, save_dir, dataset, logger=None):
     viz_font = 21
     fig, axes = plt.subplots(1, 3, figsize=(15.5, 5.25), gridspec_kw={"wspace": 0.18})
     fig.subplots_adjust(bottom=0.28)
-    class_names = _class_names(dataset)
+    class_names = _class_names(dataset, trainer=trainer)
     # PCA-reduce each panel to a common dimensionality before t-SNE so that
     # all panels use the same perplexity and noise level, giving comparable layouts.
     pca_dim    = min(50, min(X.shape[1] for X, _ in panels))
@@ -229,7 +228,7 @@ def plot_fusion_embedding(trainer, gen_train, save_dir, dataset, logger=None):
                       label=name)
         for i, name in enumerate(class_names)
     ]
-    legend_cols = 5 if dataset == "office_caltech" else len(class_names)
+    legend_cols = 5 if dataset == "office_home" else len(class_names)
     fig.legend(handles=legend_handles, loc="lower center",
                bbox_to_anchor=(0.5, -0.06), ncol=legend_cols,
                fontsize=viz_font,
@@ -245,7 +244,7 @@ def _evaluation_logits(trainer, gen_test):
     base_logits = trainer.baseline_trainer.predict_logits(trainer.data.t_test_x)
     fed_logits = trainer.fedpot_trainer.predict_logits(X_aug)
     alpha = getattr(trainer.cfg.downstream, "fusion_alpha", 0.65)
-    if trainer.cfg.data.dataset == "office_caltech":
+    if trainer.cfg.data.dataset == "office_home":
         alpha = 0.75
     fused_logits = alpha * fed_logits + (1.0 - alpha) * base_logits
     if getattr(trainer, "align_trainer", None) is not None and getattr(trainer, "_align_W", None) is not None:
@@ -304,7 +303,7 @@ def plot_calibration(trainer, gen_test, save_dir, dataset, logger=None):
 def run_qualitative_visualization(trainer, cfg, save_dir, dataset, logger=None):
     os.makedirs(save_dir, exist_ok=True)
     gen_train, gen_test = _generated_views(trainer)
-    if dataset == "office_caltech":
+    if dataset == "office_home":
         plot_office_retrieval(trainer, gen_train, gen_test, save_dir, logger)
     if dataset == "cwru":
         plot_cwru_feature_profiles(trainer, gen_train, save_dir, dataset, logger)

@@ -1,18 +1,17 @@
 """
-experiments/baselines.py — 实验一：SOTA 基线对比
+experiments/baselines.py �?实验一：SOTA 基线对比
 
 对比方法（CrossFGAT-Lite 已替换为 ProtoFTL）：
   - NoTransfer
   - FedAvg-FTL
   - DANN-FTL
   - SHOT-FTL
-  - ProtoFTL       ← 新增：原型最近邻联邦迁移（无 OT / 无生成）
+  - ProtoFTL       �?新增：原型最近邻联邦迁移（无 OT / 无生成）
   - FedPOT (Ours)
 
 输出:
   - results/tables/baselines_{dataset}.xlsx
-  - results/figures/baselines_{dataset}.pdf  （无大标题，图例在图上方居中）
-"""
+  - results/figures/baselines_{dataset}.pdf  （无大标题，图例在图上方居中�?"""
 
 import os
 import copy
@@ -53,17 +52,6 @@ METHOD_ORDER = [
     "FedPOT (Ours)",
 ]
 
-FEDPOT_AUC_MARGIN = {
-    "office_caltech": 0.008,
-    "cwru": 0.006,
-}
-
-OC_FIXED_ACC_F1 = {
-    "accuracy": 0.4375,
-    "macro_f1": 0.3627,
-}
-
-
 def _single_best_method(results, methods, metric):
     vals = np.array([results.get(m, {}).get(metric, np.nan) for m in methods], dtype=float)
     if np.all(np.isnan(vals)):
@@ -101,7 +89,7 @@ def _source_prototypes(data, cfg):
     return proto.astype(np.float32)
 
 
-def _target_pseudo_labels(data, cfg):
+def _target_pseudo_labels(data, cfg, return_mapping: bool = False):
     n_cls = cfg.data.n_classes
     km = KMeans(
         n_clusters=n_cls,
@@ -114,9 +102,9 @@ def _target_pseudo_labels(data, cfg):
     mu_d = _source_prototypes(data, cfg)
     align_dim = min(mu_t.shape[1], mu_d.shape[1])
 
-    if cfg.data.dataset == "office_caltech":
+    if cfg.data.dataset == "office_home":
         # OC: t-features (CNN second half) and d-features (CNN first half) are
-        # disjoint — cosine similarity between them is meaningless and causes all
+        # disjoint �?cosine similarity between them is meaningless and causes all
         # clusters to map to the same class (label collapse).  Use relational
         # bijection instead: match clusters by within-domain pairwise distance
         # profiles, then solve a one-to-one assignment via LAP.
@@ -137,7 +125,10 @@ def _target_pseudo_labels(data, cfg):
                @ normalize(mu_d[:, :align_dim], norm="l2").T)
         cluster_to_class = sim.argmax(axis=1)
 
-    return cluster_to_class[train_clusters], mu_t, mu_d
+    pseudo = cluster_to_class[train_clusters]
+    if return_mapping:
+        return pseudo, mu_t, mu_d, cluster_to_class
+    return pseudo, mu_t, mu_d
 
 
 def _coral_map(source, target, eps=1e-3):
@@ -164,7 +155,7 @@ def _coral_map(source, target, eps=1e-3):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_no_transfer(data, cfg, logger=None) -> Dict:
-    """仅用 t 侧不完整特征训练分类器，无任何迁移。"""
+    """No-transfer baseline using target-side incomplete features only."""
     pseudo_train, _, _ = _target_pseudo_labels(data, cfg)
     trainer = DownstreamTrainer(cfg, "NoTransfer")
     trainer.train(data.t_train_x, pseudo_train, logger)
@@ -172,23 +163,7 @@ def run_no_transfer(data, cfg, logger=None) -> Dict:
 
 
 def run_fedavg_ftl(data, cfg, logger=None) -> Dict:
-    """
-    FedAvg-FTL: CORAL covariance-alignment simulation.
-
-    Simulates federated averaging by sharing only second-order feature
-    statistics (covariance matrix eigendecomposition) across the domain
-    boundary — no raw training samples are transmitted.  The d-side computes
-    its feature covariance and sends the eigenbasis; the t-side whitens its
-    own features and re-colours them with the d-side covariance structure.
-
-    This is a principled analogue of FedAvg where the shared "model weights"
-    are the covariance eigenvectors of the d-domain.  For OC (disjoint CNN
-    feature halves), d-domain covariance structure does not transfer
-    meaningfully to t-features, making this substantially weaker than
-    FedPOT's OT-conditioned CVAE generation.  For CWRU (same physical
-    feature type), covariance alignment captures load-invariant fault
-    directions but lacks the class-specific conditioning of FedPOT.
-    """
+    """FedAvg-FTL baseline using CORAL covariance alignment."""
     t_dim     = data.t_train_x.shape[1]
     d_dim     = data.d_train_x.shape[1]
     align_dim = min(t_dim, d_dim)
@@ -209,10 +184,7 @@ def run_fedavg_ftl(data, cfg, logger=None) -> Dict:
 
 
 def run_dann_ftl(data, cfg, logger=None) -> Dict:
-    """
-    DANN-FTL：基于原型的对抗域对齐（简化版），
-    用 t/d 类均值原型做最小二乘线性映射后分类。
-    """
+    """DANN-FTL baseline using prototype-based domain alignment."""
     n_cls = cfg.data.n_classes
     t_dim = data.t_train_x.shape[1]
     d_dim = data.d_train_x.shape[1]
@@ -231,10 +203,7 @@ def run_dann_ftl(data, cfg, logger=None) -> Dict:
 
 
 def run_shot_ftl(data, cfg, logger=None) -> Dict:
-    """
-    SHOT-FTL：先在 t 侧有标签数据监督训练，
-    再用熵最小化在 t 侧测试集做无监督微调。
-    """
+    """SHOT-FTL baseline with target-side self-training."""
     device = torch.device(cfg.device)
     pseudo_train, _, _ = _target_pseudo_labels(data, cfg)
     trainer = DownstreamTrainer(cfg, "SHOT-FTL")
@@ -244,15 +213,7 @@ def run_shot_ftl(data, cfg, logger=None) -> Dict:
 
 
 def run_proto_ftl(data, cfg, logger=None) -> Dict:
-    """
-    ProtoFTL：基于原型最近邻的联邦迁移学习。
-    d 侧传输类别原型（加 DP 噪声），t 侧通过最近邻分配获取软标签，
-    再用软标签增强特征训练下游分类器。
-    与 FedPOT 的核心区别：无 OT 对齐、无 CVAE 生成，直接用原型插值。
-
-    参考: Tan et al., "FedProto: Federated Prototype Learning across
-    Heterogeneous Clients", AAAI 2022 (adapted to FTL setting).
-    """
+    """ProtoFTL baseline using nearest-prototype transfer."""
     n_cls = cfg.data.n_classes
     t_dim = data.t_train_x.shape[1]
     d_dim = data.d_train_x.shape[1]
@@ -261,19 +222,19 @@ def run_proto_ftl(data, cfg, logger=None) -> Dict:
     pseudo_train, mu_t, mu_d = _target_pseudo_labels(data, cfg)
     mu_d_noisy = mu_d
 
-    # ── Step2: t 侧用类原型计算 t 侧均值，做最近邻软分配 ──
+    # ── Step2: t 侧用类原型计�?t 侧均值，做最近邻软分�?──
     align_dim = min(t_dim, d_dim)
-    # 余弦相似度分配
+    # Cosine-similarity assignment.
     mu_t_n = mu_t[:, :align_dim] / (
         np.linalg.norm(mu_t[:, :align_dim], axis=1, keepdims=True) + 1e-8)
     mu_d_n = mu_d_noisy[:, :align_dim] / (
         np.linalg.norm(mu_d_noisy[:, :align_dim], axis=1, keepdims=True) + 1e-8)
 
-    # 每个 t 侧训练样本：软权重 = softmax(cos_sim)
+    # 每个 t 侧训练样本：软权�?= softmax(cos_sim)
     t_norm = data.t_train_x[:, :align_dim] / (
         np.linalg.norm(data.t_train_x[:, :align_dim],
                        axis=1, keepdims=True) + 1e-8)
-    if cfg.data.dataset == "office_caltech":
+    if cfg.data.dataset == "office_home":
         counts = np.array([(data.d_train_y == k).sum() for k in range(n_cls)],
                           dtype=np.float32)
         prior = counts / (counts.sum() + 1e-8)
@@ -286,14 +247,14 @@ def run_proto_ftl(data, cfg, logger=None) -> Dict:
     # 软原型条件（加权平均 d 侧原型）
     proto_feat = weights @ mu_d_noisy[:, :d_dim]  # [N_t, d_dim]
 
-    # ── Step3: 拼接增强特征训练分类器 ──
+    # ── Step3: 拼接增强特征训练分类�?──
     X_aug_tr = np.concatenate([data.t_train_x, proto_feat], axis=1)
 
-    # 测试集同样处理
+    # Apply the same prototype weighting to test samples.
     t_te_norm  = data.t_test_x[:, :align_dim] / (
         np.linalg.norm(data.t_test_x[:, :align_dim],
                        axis=1, keepdims=True) + 1e-8)
-    if cfg.data.dataset == "office_caltech":
+    if cfg.data.dataset == "office_home":
         weights_te = np.tile(weights[0:1], (len(data.t_test_x), 1))
     else:
         sim_te     = t_te_norm @ mu_t_n.T
@@ -308,17 +269,12 @@ def run_proto_ftl(data, cfg, logger=None) -> Dict:
 
 
 def run_dann_ftl_fair(data, cfg, logger=None) -> Dict:
-    """DANN-FTL in the federated protocol.
-
-    Only information crossing the domain boundary is the DP-noisy class
-    prototypes (same as FedPOT).  Alignment is learned from the prototype
-    pairs via least-squares (proto_t → proto_d), then applied to all target
-    samples.  Labels come from pseudo-labelling, not from source ground truth.
-    """
-    pseudo_train, mu_t, mu_d = _target_pseudo_labels(data, cfg)
+    """DANN-FTL fair baseline in the federated protocol."""
+    pseudo_train, mu_t, mu_d, cluster_to_class = _target_pseudo_labels(
+        data, cfg, return_mapping=True)
     align_dim = min(mu_t.shape[1], mu_d.shape[1])
-    W, _, _, _ = np.linalg.lstsq(mu_t[:, :align_dim], mu_d[:, :align_dim],
-                                  rcond=None)
+    mapped = mu_d[np.clip(cluster_to_class, 0, mu_d.shape[0] - 1), :align_dim]
+    W, _, _, _ = np.linalg.lstsq(mu_t[:, :align_dim], mapped, rcond=None)
     aligned_tr = (data.t_train_x[:, :align_dim] @ W).astype(np.float32)
     aligned_te = (data.t_test_x[:, :align_dim]  @ W).astype(np.float32)
     trainer = DownstreamTrainer(cfg, "DANN-FTL")
@@ -327,13 +283,7 @@ def run_dann_ftl_fair(data, cfg, logger=None) -> Dict:
 
 
 def run_shot_ftl_fair(data, cfg, logger=None) -> Dict:
-    """SHOT-FTL in the federated protocol.
-
-    Initial training uses pseudo labels derived from DP-noisy prototypes (no
-    source features or source labels are accessed).  A self-training refinement
-    step then re-trains on the top-60%-confidence target predictions, mimicking
-    SHOT's entropy minimisation without violating the federated privacy boundary.
-    """
+    """SHOT-FTL fair baseline in the federated protocol."""
     pseudo_train, _, _ = _target_pseudo_labels(data, cfg)
     trainer = DownstreamTrainer(cfg, "SHOT-FTL")
     trainer.train(data.t_train_x, pseudo_train, logger)
@@ -373,23 +323,7 @@ def run_baseline_comparison(data, cfg, fedpot_results: Dict,
             all_results[name] = {"accuracy": float("nan"),
                                  "macro_f1": float("nan"),
                                  "macro_auc": float("nan")}
-    fedpot = dict(fedpot_results.get("FedPOT", {}))
-    other_aucs = [
-        float(m.get("macro_auc"))
-        for m in all_results.values()
-        if m.get("macro_auc") is not None and not np.isnan(m.get("macro_auc"))
-    ]
-    if other_aucs and "macro_auc" in fedpot and not np.isnan(fedpot["macro_auc"]):
-        target_auc = min(
-            0.995,
-            max(other_aucs) + FEDPOT_AUC_MARGIN.get(cfg.data.dataset, 0.005),
-        )
-        if fedpot["macro_auc"] < target_auc:
-            fedpot["macro_auc"] = target_auc
-    all_results["FedPOT (Ours)"] = fedpot
-    if cfg.data.dataset == "office_caltech":
-        for metrics in all_results.values():
-            metrics.update(OC_FIXED_ACC_F1)
+    all_results["FedPOT (Ours)"] = dict(fedpot_results.get("FedPOT", {}))
     return all_results
 
 
@@ -410,12 +344,11 @@ def _save_baselines_xlsx(results: Dict, table_dir: str, dataset: str,
         })
     path = os.path.join(table_dir, f"baselines_{dataset}.xlsx")
     save_xlsx(rows, path, sheet_name=f"Baselines_{dataset}")
-    logger and logger.info(f"  [Baseline] XLSX saved → {path}")
+    logger and logger.info(f"  [Baseline] XLSX saved -> {path}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 绘图：无标题，图例在图上方居中一行
-# ─────────────────────────────────────────────────────────────────────────────
+# 绘图：无标题，图例在图上方居中一�?# ─────────────────────────────────────────────────────────────────────────────
 
 def plot_baseline_comparison(results: Dict, save_dir: str,
                              dataset: str, logger=None):
@@ -432,7 +365,7 @@ def plot_baseline_comparison(results: Dict, save_dir: str,
     gap     = 0.08
     group_h = n_met * bar_h + gap
 
-    # 为图例留出顶部空间
+    # Leave room for the legend above the plot.
     fig, ax = plt.subplots(figsize=(10, max(5.2, n_m * 1.05 + 1.8)))
     fig.subplots_adjust(top=0.88)   # 留出图例空间
 
@@ -461,7 +394,7 @@ def plot_baseline_comparison(results: Dict, save_dir: str,
                         color="#222222" if is_best else "#777777",
                         fontweight="bold" if is_best else "normal")
 
-    # FedPOT 行背景高亮
+    # Highlight rows whose method is best for at least one metric.
     fp_gi = methods.index("FedPOT (Ours)") if "FedPOT (Ours)" in methods else -1
     best_methods = {
         m for m in best_method_by_metric.values() if m is not None
@@ -481,7 +414,7 @@ def plot_baseline_comparison(results: Dict, save_dir: str,
     ax.axvline(0.5, color="#CCCCCC", lw=0.8, ls=":", zorder=2)
     ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.1f}"))
 
-    # 图例：图外上方居中一行
+    # Legend patches.
     patches = [mpatches.Patch(color=METRIC_PALETTE[i], label=METRIC_LABELS[i])
                for i in range(n_met)]
     fig.legend(handles=patches,
@@ -496,7 +429,7 @@ def plot_baseline_comparison(results: Dict, save_dir: str,
 
     path = os.path.join(save_dir, f"baselines_{dataset}.pdf")
     save_pdf(fig, path)
-    logger and logger.info(f"  [Baseline] Chart saved → {path}")
+    logger and logger.info(f"  [Baseline] Chart saved -> {path}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

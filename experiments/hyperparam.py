@@ -1,9 +1,9 @@
-﻿"""
-experiments/hyperparam.py — 实验四：超参数敏感性分析
+"""
+experiments/hyperparam.py �� ʵ���ģ������������Է���
 
-修复：图例统一放在三张子图下方居中一行，不再与曲线重叠。
+�޸���ͼ��ͳһ����������ͼ�·�����һ�У������������ص���
 
-输出:
+���:
   - results/tables/hyperparam_{dataset}.xlsx
   - results/figures/hyperparam_{dataset}.pdf
 """
@@ -47,13 +47,13 @@ PARAM_DEFAULTS = {
 }
 
 DATASET_DEFAULTS = {
-    "office_caltech": {
+    "office_home": {
         "beta": "2.0",
         "ot_lambda": "0.0",
         "latent_dim": "128",
     },
     "cwru": {
-        "beta":       "0.1",   # β=0.1 gives best CWRU Acc/F1 in sweep
+        "beta":       "0.1",   # ��=0.1 gives best CWRU Acc/F1 in sweep
         "ot_lambda":  "0.1",
         "latent_dim": "128",
     },
@@ -70,9 +70,9 @@ PARAM_COLORS = {
 }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 实验驱动
-# ─────────────────────────────────────────────────────────────────────────────
+# ����������������������������������������������������������������������������������������������������������������������������������������������������������
+# ʵ������
+# ����������������������������������������������������������������������������������������������������������������������������������������������������������
 
 def run_hyperparam_analysis(args, dataset: str, build_config_fn,
                             logger=None) -> Dict:
@@ -101,9 +101,9 @@ def run_hyperparam_analysis(args, dataset: str, build_config_fn,
     return all_results
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ����������������������������������������������������������������������������������������������������������������������������������������������������������
 # XLSX
-# ─────────────────────────────────────────────────────────────────────────────
+# ����������������������������������������������������������������������������������������������������������������������������������������������������������
 
 def _save_hp_xlsx(results: Dict, table_dir: str, dataset: str, logger=None):
     rows = []
@@ -120,12 +120,12 @@ def _save_hp_xlsx(results: Dict, table_dir: str, dataset: str, logger=None):
             })
     path = os.path.join(table_dir, f"hyperparam_{dataset}.xlsx")
     save_xlsx(rows, path, sheet_name=f"Hyperparam_{dataset}")
-    logger and logger.info(f"  [Hyperparam] XLSX saved → {path}")
+    logger and logger.info(f"  [Hyperparam] XLSX saved -> {path}")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 绘图
-# ─────────────────────────────────────────────────────────────────────────────
+# ����������������������������������������������������������������������������������������������������������������������������������������������������������
+# ��ͼ
+# ����������������������������������������������������������������������������������������������������������������������������������������������������������
 
 def plot_hyperparam_sensitivity(results: Dict, save_dir: str,
                                 dataset: str, logger=None):
@@ -136,12 +136,12 @@ def plot_hyperparam_sensitivity(results: Dict, save_dir: str,
 
     apply_style()
 
-    # 为底部图例留出空间
+    # Ϊ�ײ�ͼ�������ռ�
     fig, axes = plt.subplots(
         1, 3, figsize=(15, 5.0),
         gridspec_kw={"wspace": 0.38}
     )
-    fig.subplots_adjust(bottom=0.22)   # 底部留空给共享图例
+    fig.subplots_adjust(bottom=0.22)   # �ײ����ո�����ͼ��
 
     for ax, param in zip(axes, PARAM_GRIDS.keys()):
         data    = results.get(param, {})
@@ -154,21 +154,21 @@ def plot_hyperparam_sensitivity(results: Dict, save_dir: str,
         ax.plot(x, accs, "o-",  color=color,          lw=2.5, ms=8, zorder=4)
         ax.plot(x, f1s,  "s--", color=OTHER_COLORS[4], lw=2.0, ms=7, zorder=4)
 
-        # 稳定带
+        # �ȶ���
         acc_arr = np.array([v for v in accs if not np.isnan(v)])
         if len(acc_arr):
             best = acc_arr.max()
             ax.axhspan(best - 0.02, best + 0.001,
                        color=color, alpha=0.08)
 
-        # 默认值竖线 + 背景
+        # Ĭ��ֵ���� + ����
         default_str = _defaults_for(dataset)[param]
         if default_str in xlabels:
             di = xlabels.index(default_str)
             ax.axvspan(di - 0.35, di + 0.35, color="#FFF0A0", alpha=0.55, zorder=2)
             ax.axvline(di, color="#FFAA53", lw=1.6, ls="--", alpha=0.90, zorder=3)
 
-        # 每点标注数值（仅标 Accuracy）
+        # ÿ���ע��ֵ������ Accuracy��
         for xi, acc in zip(x, accs):
             if not np.isnan(acc):
                 ax.annotate(f"{acc:.3f}", xy=(xi, acc),
@@ -192,7 +192,7 @@ def plot_hyperparam_sensitivity(results: Dict, save_dir: str,
         ax.yaxis.set_major_formatter(
             plt.FuncFormatter(lambda v, _: f"{v:.2f}"))
 
-    # ── 共享图例：三图下方居中一行 ──────────────────────────────────────────
+    # ���� ����ͼ������ͼ�·�����һ�� ������������������������������������������������������������������������������������
     legend_handles = [
         mlines.Line2D([], [], color=FEDPOT_COLOR, marker="o", lw=2.5,
                       ms=8, label=r"Accuracy ($\beta$ panel)"),
@@ -217,12 +217,12 @@ def plot_hyperparam_sensitivity(results: Dict, save_dir: str,
 
     path = os.path.join(save_dir, f"hyperparam_{dataset}.pdf")
     save_pdf(fig, path)
-    logger and logger.info(f"  [Hyperparam] Plot saved → {path}")
+    logger and logger.info(f"  [Hyperparam] Plot saved -> {path}")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 文字汇报
-# ─────────────────────────────────────────────────────────────────────────────
+# ����������������������������������������������������������������������������������������������������������������������������������������������������������
+# ���ֻ㱨
+# ����������������������������������������������������������������������������������������������������������������������������������������������������������
 
 def print_hyperparam_table(results: Dict, logger=None):
     for param, data in results.items():

@@ -1,0 +1,33 @@
+# Python generated files
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Local environments and IDE state
+.venv/
+venv/
+env/
+.idea/
+.vscode/
+.claude/
+
+# Datasets: keep only the placement guide
+data/*
+!data/README.md
+
+# Experiment outputs
+artifacts/
+checkpoints*/
+logs*/
+results*/
+
+# Local working copies and non-code assets
+code/
+code备份合集/
+docs/
+drawio/
+paper/
+
+# OS noise
+.DS_Store
+Thumbs.db

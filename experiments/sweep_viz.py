@@ -1,12 +1,8 @@
 """
-experiments/sweep_viz.py — Sweep 结果可视化（新增模块）
-
-将 --sweep 跑出的全域名对结果可视化为精致热力图，
-适合直接放入 KBS/ESWA 论文。
-
+experiments/sweep_viz.py �->Sweep 结果可视化（新增模块�->
+�->--sweep 跑出的全域名对结果可视化为精致热力图�->适合直接放入 KBS/ESWA 论文�->
 输出:
-  - results/figures/sweep_{dataset}.pdf    准确率热力图（域名对矩阵）
-  - results/tables/sweep_{dataset}.xlsx    完整数值表
+  - results/figures/sweep_{dataset}.pdf    准确率热力图（域名对矩阵�->  - results/tables/sweep_{dataset}.xlsx    完整数值表
 """
 
 import os
@@ -50,7 +46,7 @@ def _save_sweep_xlsx(sweep_results: Dict, table_dir: str, dataset: str,
         })
     path = os.path.join(table_dir, f"sweep_{dataset}.xlsx")
     save_xlsx(rows, path, sheet_name=f"Sweep_{dataset}")
-    logger and logger.info(f"  [Sweep] XLSX saved → {path}")
+    logger and logger.info(f"  [Sweep] XLSX saved -> {path}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -61,26 +57,23 @@ def plot_sweep_heatmap(sweep_results: Dict, save_dir: str,
                        dataset: str, logger=None):
     """
     将全域名 sweep 结果画成两张并排热力图：
-      左: FedPOT Accuracy（纯正值热力图, 白→#007FFF）
-      右: Δ Accuracy = FedPOT - Baseline（含正负，#FF4F4F→白→#007FFF）
-    对角线（自传）用灰色填充。
-    """
+      �-> FedPOT Accuracy（纯正值热力图, 白→#007FFF�->      �-> Δ Accuracy = FedPOT - Baseline（含正负�->FF4F4F→白�->007FFF�->    对角线（自传）用灰色填充�->    """
     apply_style()
 
-    domains = OC_DOMAINS if dataset == "office_caltech" else CWRU_LOADS
+    domains = OC_DOMAINS if dataset == "office_home" else CWRU_LOADS
     n       = len(domains)
 
     acc_mat   = np.full((n, n), np.nan)
     delta_mat = np.full((n, n), np.nan)
 
     for pair_tag, res in sweep_results.items():
-        # pair_tag 格式: "amazon->dslr" 或 "0->2"
-        parts = pair_tag.replace("→", "->").split("->")
+        # pair_tag 格式: "amazon->dslr" �->"0->2"
+        parts = pair_tag.split("->")
         if len(parts) != 2:
             continue
         src_raw, tgt_raw = parts[0].strip(), parts[1].strip()
 
-        if dataset == "office_caltech":
+        if dataset == "office_home":
             src_map = {d.lower(): i for i, d in enumerate(OC_DOMAINS)}
             src_i   = src_map.get(src_raw.lower(), -1)
             tgt_i   = src_map.get(tgt_raw.lower(), -1)
@@ -98,8 +91,7 @@ def plot_sweep_heatmap(sweep_results: Dict, save_dir: str,
         acc_mat[src_i, tgt_i]   = fp
         delta_mat[src_i, tgt_i] = (fp - bl) if (not np.isnan(fp) and not np.isnan(bl)) else np.nan
 
-    # 若矩阵全 NaN（数据未到位），生成占位图
-    _has_data = not np.all(np.isnan(acc_mat))
+    # 若矩阵全 NaN（数据未到位），生成占位�->    _has_data = not np.all(np.isnan(acc_mat))
 
     cmap_seq = make_seq_cmap()
     cmap_div = make_div_cmap()
@@ -109,7 +101,7 @@ def plot_sweep_heatmap(sweep_results: Dict, save_dir: str,
 
     panels = [
         (acc_mat,   cmap_seq, False, "FedPOT Accuracy", ".3f"),
-        (delta_mat, cmap_div, True,  "Δ Accuracy  (FedPOT − Baseline)", "+.3f"),
+        (delta_mat, cmap_div, True,  "Δ Accuracy  (FedPOT �->Baseline)", "+.3f"),
     ]
 
     for ax_i, (ax, (mat, cmap, is_div, title, fmt)) in \
@@ -131,17 +123,17 @@ def plot_sweep_heatmap(sweep_results: Dict, save_dir: str,
         im     = ax.imshow(masked, cmap=cmap, vmin=vmin, vmax=vmax,
                            aspect="equal", interpolation="nearest")
 
-        # 对角线填充灰色
+        # Fill diagonal cells.
         for i in range(n):
             ax.add_patch(plt.Rectangle(
                 (i - 0.5, i - 0.5), 1, 1,
                 color="#DDDDDD", zorder=2
             ))
-            ax.text(i, i, "—", ha="center", va="center",
+            ax.text(i, i, "--", ha="center", va="center",
                     fontsize=FS_ANNOT - 1, color="#999999", zorder=3)
-
-        # 数值标注
+        # Annotate numeric values.
         for i in range(n):
+        # 数值标�->        for i in range(n):
             for j in range(n):
                 if i == j:
                     continue
@@ -171,15 +163,15 @@ def plot_sweep_heatmap(sweep_results: Dict, save_dir: str,
         ax.set_title(f"({letter}) {title}", fontsize=FS_TITLE, pad=10)
         ax.tick_params(length=0)
 
-    # 数据集注释
-    ds_label = ("Office-Caltech10" if dataset == "office_caltech"
+    # Dataset note.
+    ds_label = ("Office-Home" if dataset == "office_home"
                 else "CWRU Bearing Fault")
     fig.text(0.5, 0.01, f"Dataset: {ds_label}  |  All {n*(n-1)} cross-domain pairs",
              ha="center", fontsize=FS_ANNOT, color="#666666", style="italic")
 
     path = os.path.join(save_dir, f"sweep_{dataset}.pdf")
     save_pdf(fig, path)
-    logger and logger.info(f"  [Sweep] Heatmap saved → {path}")
+    logger and logger.info(f"  [Sweep] Heatmap saved -> {path}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -188,7 +180,7 @@ def plot_sweep_heatmap(sweep_results: Dict, save_dir: str,
 
 def run_sweep_visualization(sweep_results: Dict, save_dir: str,
                              dataset: str, logger=None):
-    """从 sweep 结果字典生成热力图 + XLSX。"""
+    """Generate sweep heatmaps and XLSX tables."""
     os.makedirs(save_dir, exist_ok=True)
     table_dir = os.path.join(os.path.dirname(save_dir.rstrip("/")), "tables")
     os.makedirs(table_dir, exist_ok=True)

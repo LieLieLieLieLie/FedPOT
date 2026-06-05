@@ -1,13 +1,12 @@
 """
-trainer.py — FedPOT pipeline orchestrator.
+trainer.py �?FedPOT pipeline orchestrator.
 
 Modes:
   train      : run all phases, save models
   test       : load saved models, evaluate only
   train_test : train + evaluate (default)
 
-每个 Phase 都记录耗时，run() 结束后打印总时间汇总。
-"""
+每个 Phase 都记录耗时，run() 结束后打印总时间汇总�?"""
 
 import os
 import json
@@ -41,20 +40,24 @@ class PhaseTimer:
         return time.time() - self._start
 
     def summary(self) -> str:
-        lines = ["\n  ┌─────────────────────────────────────────┐",
-                 "  │            时间统计 Time Report          │",
-                 "  ├─────────────────────────────────────────┤"]
+        lines = [
+            "",
+            "  +-------------------------------------------+",
+            "  |            Time Report                    |",
+            "  +-------------------------------------------+",
+        ]
         for name, sec in self._records.items():
             m, s = divmod(int(sec), 60)
-            lines.append(f"  │  {name:<28s}  {m:02d}:{s:02d}  │")
-        lines.append("  ├─────────────────────────────────────────┤")
+            lines.append(f"  | {name:<28s}  {m:02d}:{s:02d}        |")
+        lines.append("  +-------------------------------------------+")
         total = self.total()
         m, s  = divmod(int(total), 60)
         h, m  = divmod(m, 60)
         t_str = f"{h}h {m:02d}m {s:02d}s" if h > 0 else f"{m:02d}m {s:02d}s"
-        lines.append(f"  │  {'Total':<28s}  {t_str:<6s}  │")
-        lines.append("  └─────────────────────────────────────────┘")
+        lines.append(f"  | {'Total':<28s}  {t_str:<10s}  |")
+        lines.append("  +-------------------------------------------+")
         return "\n".join(lines)
+
 
 
 class FedPOTTrainer:
@@ -67,6 +70,7 @@ class FedPOTTrainer:
         self.aligner = self.generator = self.filt = None
         self.baseline_trainer = self.fedpot_trainer = None
         self.align_trainer = None
+        self.combo_trainer = None
         self.auc_align_trainer = None
         self._align_W = None
         self._gen_train = None
@@ -244,11 +248,17 @@ class FedPOTTrainer:
                                   sample_weight=sample_weight)
         align_tr, self._align_W = self._prototype_alignment_view(self.data.t_train_x, fit=True)
         self.align_trainer = DownstreamTrainer(self.cfg, "FedPOT-align")
+        # The alignment branch is a deterministic prototype-mapped target view,
+        # not a generated sample set.  CVAE uncertainty weights should only
+        # down-weight generated features; applying them here weakens the align
+        # branch compared with the same fair protocol used by DANN-FTL.
         self.align_trainer.train(align_tr, pseudo_labels, self.logger)
-        if getattr(self.cfg.downstream, "use_auc_align_head", False):
-            auc_align_tr, _ = self._identity_alignment_view(self.data.t_train_x)
-            self.auc_align_trainer = DownstreamTrainer(self.cfg, "DANN-FTL")
-            self.auc_align_trainer.train(auc_align_tr, pseudo_labels, self.logger)
+        if getattr(self.cfg.downstream, "use_combo_fusion", False):
+            X_combo_tr = np.concatenate(
+                [self.data.t_train_x, gen_train, align_tr], axis=1)
+            self.combo_trainer = DownstreamTrainer(self.cfg, "FedPOT-combo")
+            self.combo_trainer.train(X_combo_tr, pseudo_labels, self.logger,
+                                     sample_weight=sample_weight)
         self._gen_train = gen_train
         self._gen_test = gen_test
         self.timer.record("Phase5: Classifier Train", time.time()-t0)
@@ -257,8 +267,8 @@ class FedPOTTrainer:
         t0 = time.time()
         self.logger.info("="*58 + "\nPhase 5 · Evaluation\n" + "="*58)
         res_base = self.baseline_trainer.evaluate(self.data.t_test_x, self.data.t_test_y)
-        X_aug_te = np.concatenate([self.data.t_test_x, self._gen_test], axis=1)
         base_logits = self.baseline_trainer.predict_logits(self.data.t_test_x)
+        X_aug_te = np.concatenate([self.data.t_test_x, self._gen_test], axis=1)
         fed_logits = self.fedpot_trainer.predict_logits(X_aug_te)
         alpha = float(getattr(self.cfg.downstream, "fusion_alpha", 0.65))
         if self._gen_train is not None:
@@ -266,6 +276,26 @@ class FedPOTTrainer:
             train_base_logits = self.baseline_trainer.predict_logits(self.data.t_train_x)
             train_fed_logits = self.fedpot_trainer.predict_logits(train_aug)
             train_labels = self.aligner.get_pseudo_labels(self.t_bank.assignments)
+            if (getattr(self.cfg.downstream, "use_combo_fusion", False)
+                    and self.combo_trainer is not None
+                    and self._align_W is not None):
+                align_tr_for_combo, _ = self._prototype_alignment_view(
+                    self.data.t_train_x, fit=False)
+                train_combo = np.concatenate(
+                    [self.data.t_train_x, self._gen_train, align_tr_for_combo],
+                    axis=1)
+                train_combo_logits = self.combo_trainer.predict_logits(train_combo)
+                align_te_for_combo, _ = self._prototype_alignment_view(
+                    self.data.t_test_x, fit=False)
+                test_combo = np.concatenate(
+                    [self.data.t_test_x, self._gen_test, align_te_for_combo],
+                    axis=1)
+                combo_logits = self.combo_trainer.predict_logits(test_combo)
+                if self._pseudo_score(train_combo_logits, train_labels) >= self._pseudo_score(
+                        train_fed_logits, train_labels):
+                    train_fed_logits = train_combo_logits
+                    fed_logits = combo_logits
+                    self.logger.info("  [Fusion] using three-view FedPOT-combo")
             alpha = self._select_fusion_alpha(train_base_logits, train_fed_logits, train_labels)
         self.logger.info(f"  [Fusion] alpha={alpha:.2f}")
         fused_logits = alpha * fed_logits + (1.0 - alpha) * base_logits
@@ -284,16 +314,23 @@ class FedPOTTrainer:
         fused_logits = self._apply_balance_prior(fused_logits)
         res_fed = metrics_from_logits(
             fused_logits, self.data.t_test_y, self.cfg.data.n_classes)
-        if getattr(self.cfg.downstream, "use_auc_align_head", False):
-            auc_logits = self._auc_align_logits()
-            if auc_logits is not None:
-                auc = self._auc_from_logits(auc_logits, self.data.t_test_y)
-                bonus = float(getattr(self.cfg.downstream, "auc_align_bonus", 0.0))
-                res_fed["macro_auc"] = min(1.0, auc + bonus)
         results  = {"Baseline": res_base, "FedPOT": res_fed}
         print_results(results, self.logger)
         self.timer.record("Phase5: Evaluation", time.time()-t0)
         return results
+
+    def _pseudo_score(self, logits, labels):
+        pred = logits.argmax(1)
+        acc = accuracy_score(labels, pred)
+        f1 = f1_score(labels, pred, average="macro", zero_division=0)
+        try:
+            probs = np.exp(logits - logits.max(1, keepdims=True))
+            probs /= probs.sum(1, keepdims=True) + 1e-12
+            yb = label_binarize(labels, classes=list(range(self.cfg.data.n_classes)))
+            auc = roc_auc_score(yb, probs, average="macro", multi_class="ovr")
+        except Exception:
+            auc = (acc + f1) / 2
+        return (acc + f1 + auc) / 3
 
     def _apply_balance_prior(self, logits):
         strength = float(getattr(self.cfg.downstream, "balance_prior_strength", 0.0))
@@ -363,7 +400,7 @@ class FedPOTTrainer:
 
     def _select_align_alpha(self, fused_logits, align_logits, labels):
         cfg_ds = self.cfg.downstream
-        is_oc  = (self.cfg.data.dataset == "office_caltech")
+        is_oc  = (self.cfg.data.dataset == "office_home")
         default = float(
             getattr(cfg_ds, "office_align_alpha", 0.20)
             if is_oc
@@ -379,26 +416,26 @@ class FedPOTTrainer:
             pred = logits.argmax(1)
             acc = accuracy_score(labels, pred)
             f1  = f1_score(labels, pred, average="macro", zero_division=0)
+            # Compute AUC for all datasets �?used in both OC and CWRU criteria.
+            try:
+                probs = np.exp(logits - logits.max(1, keepdims=True))
+                probs /= probs.sum(1, keepdims=True)
+                yb  = label_binarize(labels, classes=list(range(n_cls)))
+                auc = roc_auc_score(yb, probs, average="macro", multi_class="ovr")
+            except Exception:
+                auc = (acc + f1) / 2
             if is_oc:
-                # OC: align_trainer uses lstsq linear-map features (deterministic,
-                # class-aligned) which improve AUC probability calibration.
-                # AUC-weighted criterion selects higher align_alpha when the
-                # alignment branch improves calibration, closing the AUC gap
-                # with ProtoFTL.
-                try:
-                    probs = np.exp(logits - logits.max(1, keepdims=True))
-                    probs /= probs.sum(1, keepdims=True)
-                    yb  = label_binarize(labels, classes=list(range(n_cls)))
-                    auc = roc_auc_score(yb, probs, average="macro", multi_class="ovr")
-                except Exception:
-                    auc = (acc + f1) / 2
+                # OC: AUC is the primary differentiator (Acc/F1 ceiling-limited).
+                # Heavily weight AUC so the criterion selects align_alpha that
+                # improves probability calibration.
                 score = 0.2 * acc + 0.3 * f1 + 0.5 * auc
             else:
-                # CWRU: align_trainer (≈ DANN-FTL) is strong on F1.
-                # Giving F1 a 0.7 weight ensures higher align_alpha when the
-                # alignment branch improves F1, making FedPOT ensemble F1
-                # at least as high as DANN-FTL's F1.
-                score = 0.3 * acc + 0.7 * f1
+                # CWRU: balance Acc, F1 and AUC so the ensemble can benefit
+                # from both f_align (strong on Acc/F1) and f_aug (strong on AUC).
+                # Previously 0.3*acc+0.7*f1 ignored AUC entirely, causing the
+                # optimiser to always pick align_alpha=1.0 (pure f_align =
+                # DANN-FTL), discarding all CVAE probability calibration.
+                score = 0.25 * acc + 0.35 * f1 + 0.40 * auc
             if score > best_score + 1e-12:
                 best_score = score
                 best_alpha = alpha
@@ -519,7 +556,7 @@ class FedPOTTrainer:
         return results
 
     def retrain_with_epsilon(self, epsilon: float) -> Dict:
-        """Re-run Phases 2–5 with a new DP epsilon, keeping the CVAE frozen.
+        """Re-run Phases 2�? with a new DP epsilon, keeping the CVAE frozen.
 
         Call this after train_test() to sweep epsilon without CVAE stochasticity
         contaminating the curve.  Only the DP noise on d-prototypes changes,
@@ -550,7 +587,7 @@ class FedPOTTrainer:
             # Phase 2: OT alignment uses RAW (clean) prototypes so that the
             # transport plan / bijection is stable across all ε values.
             # Only the CVAE conditioning (computed below from proto_d=noisy)
-            # carries the ε-specific noise — this cleanly isolates the
+            # carries the ε-specific noise �?this cleanly isolates the
             # privacy-accuracy trade-off in the subsequent phases.
             aligner = PartialOTAligner(self.cfg).fit(
                 self.t_bank.raw_prototypes, self.d_bank.raw_prototypes)
@@ -588,10 +625,6 @@ class FedPOTTrainer:
             # Phase 5: Re-train downstream classifiers
             baseline_tr = DownstreamTrainer(self.cfg, "Baseline")
             baseline_tr.train(self.data.t_train_x, pseudo_labels, self.logger)
-            X_aug_tr = np.concatenate([self.data.t_train_x, gen_train], axis=1)
-            fedpot_tr = DownstreamTrainer(self.cfg, "FedPOT")
-            fedpot_tr.train(X_aug_tr, pseudo_labels, self.logger, sample_weight=sw)
-
             saved_aligner = self.aligner
             saved_W = self._align_W
             self.aligner = aligner
@@ -600,10 +633,16 @@ class FedPOTTrainer:
                 self.data.t_train_x, fit=True)
             self.aligner = saved_aligner
             self._align_W = saved_W
+            X_aug_tr = np.concatenate([self.data.t_train_x, gen_train], axis=1)
+            fedpot_tr = DownstreamTrainer(self.cfg, "FedPOT")
+            fedpot_tr.train(X_aug_tr, pseudo_labels, self.logger, sample_weight=sw)
+
             align_tr_obj = DownstreamTrainer(self.cfg, "FedPOT-align")
             align_tr_obj.train(align_tr_feat, pseudo_labels, self.logger)
 
             # Evaluate
+            ad = align_W_loc.shape[0]
+            align_te_feat = (self.data.t_test_x[:, :ad] @ align_W_loc).astype(np.float32)
             X_aug_te = np.concatenate([self.data.t_test_x, gen_test], axis=1)
             base_logits = baseline_tr.predict_logits(self.data.t_test_x)
             fed_logits  = fedpot_tr.predict_logits(X_aug_te)
@@ -613,8 +652,6 @@ class FedPOTTrainer:
                 train_base_logits, train_fed_logits, pseudo_labels)
             fused_logits = alpha * fed_logits + (1.0 - alpha) * base_logits
             if align_tr_obj is not None and align_W_loc is not None:
-                ad = align_W_loc.shape[0]
-                align_te_feat = (self.data.t_test_x[:, :ad] @ align_W_loc).astype(np.float32)
                 align_logits = align_tr_obj.predict_logits(align_te_feat)
                 train_fused_logits = alpha * train_fed_logits + (1.0 - alpha) * train_base_logits
                 train_align_logits = align_tr_obj.predict_logits(align_tr_feat)
